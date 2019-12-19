@@ -366,11 +366,27 @@ ACTOR Future<Void> connectionMonitor( Reference<Peer> peer ) {
 	}
 }
 
+ACTOR Future<Void> writePing( Reference<Peer> self, Future<Void> pingDelay ) {
+	wait(pingDelay);
+	self->pingCount++;
+	FlowTransport::transport().sendUnreliable( SerializeSource<ReplyPromise<Void>>(ReplyPromise<Void>()), Endpoint({ self->destination }, WLTOKEN_PING_PACKET), true );
+	return Void();
+}
+
 ACTOR Future<Void> connectionWriter( Reference<Peer> self, Reference<IConnection> conn ) {
 	state double lastWriteTime = now();
+	state int pingCount = 0;
+	state Future<Void> doPing;
+	state Future<Void> pingDelay = Never();
+	state PacketBuffer* lastUnsent = NULL;
+	state int lastBytesWritten = 0;
+	
+	self->pingCount = 0;
 	loop {
 		//wait( delay(0, TaskPriority::WriteSocket) );
-		wait( delayJittered(std::max<double>(FLOW_KNOBS->MIN_COALESCE_DELAY, FLOW_KNOBS->MAX_COALESCE_DELAY - (now() - lastWriteTime)), TaskPriority::WriteSocket) );
+		if(self->pingCount == 0) {
+			wait( delayJittered(std::max<double>(FLOW_KNOBS->MIN_COALESCE_DELAY, FLOW_KNOBS->MAX_COALESCE_DELAY - (now() - lastWriteTime)), TaskPriority::WriteSocket) );
+		}
 		//wait( delay(500e-6, TaskPriority::WriteSocket) );
 		//wait( yield(TaskPriority::WriteSocket) );
 
@@ -384,15 +400,33 @@ ACTOR Future<Void> connectionWriter( Reference<Peer> self, Reference<IConnection
 				self->unsent.sent(sent);
 			}
 			if (self->unsent.empty()) break;
+			lastUnsent = self->unsent.getWriteBuffer();
+			lastBytesWritten = lastUnsent->bytes_written;
 
 			TEST(true); // We didn't write everything, so apparently the write buffer is full.  Wait for it to be nonfull.
 			wait( conn->onWritable() );
 			wait( yield(TaskPriority::WriteSocket) );
+
+			if(self->pingCount > 0 && (lastUnsent != self->unsent.getWriteBuffer() || lastBytesWritten != lastUnsent->bytes_written)) {
+				self->pingCount = 0;
+			}
+		}
+
+		if(self->pingCount < 3) {
+			pingDelay = self->pingCount == 0 ? delay( 0.005 ) : Future<Void>(Void());
+			doPing = writePing(self, pingDelay);
+		} else {
+			pingDelay = Never();
 		}
 
 		// Wait until there is something to send
 		while ( self->unsent.empty() )
 			wait( self->dataToSend.onTrigger() );
+
+		if(!pingDelay.isReady()) {
+			self->pingCount = 0;
+			doPing.cancel();
+		}
 	}
 }
 

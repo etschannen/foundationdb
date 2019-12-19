@@ -123,11 +123,12 @@ struct Peer : public ReferenceCounted<Peer> {
 	int64_t bytesReceived;
 	double lastDataPacketSentTime;
 	int outstandingReplies;
+	int pingCount;
 
 	explicit Peer(TransportData* transport, NetworkAddress const& destination)
 	  : transport(transport), destination(destination), outgoingConnectionIdle(true), lastConnectTime(0.0),
 	    reconnectionDelay(FLOW_KNOBS->INITIAL_RECONNECTION_TIME), compatible(true), outstandingReplies(0),
-	    incompatibleProtocolVersionNewer(false), peerReferences(-1), bytesReceived(0), lastDataPacketSentTime(now()) {}
+	    incompatibleProtocolVersionNewer(false), peerReferences(-1), bytesReceived(0), lastDataPacketSentTime(now()), pingCount(0) {}
 
 	void send(PacketBuffer* pb, ReliablePacket* rp, bool firstUnsent);
 
