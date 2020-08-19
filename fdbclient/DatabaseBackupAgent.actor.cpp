@@ -1878,15 +1878,19 @@ public:
 
 		if (!databasesInSync) {
 			// Make sure all of the ranges are empty before we backup into them.
-			state std::vector<Future<Standalone<RangeResultRef>>> backupIntoResults;
-			for (auto& backupRange : backupRanges) {
-				backupIntoResults.push_back(tr->getRange(backupRange.removePrefix(removePrefix).withPrefix(addPrefix), 1));
-			}
-			wait(waitForAll(backupIntoResults));
-			for (auto result : backupIntoResults) {
-				if (result.get().size() > 0) {
-					// One of the ranges we will be backing up into has pre-existing data.
-					throw restore_destination_not_empty();
+			if(backupRanges.size() == 1 && backupRanges[0] == normalKeys) {
+				tr->clear(normalKeys);
+			} else {
+				state std::vector<Future<Standalone<RangeResultRef>>> backupIntoResults;
+				for (auto& backupRange : backupRanges) {
+					backupIntoResults.push_back(tr->getRange(backupRange.removePrefix(removePrefix).withPrefix(addPrefix), 1));
+				}
+				wait(waitForAll(backupIntoResults));
+				for (auto result : backupIntoResults) {
+					if (result.get().size() > 0) {
+						// One of the ranges we will be backing up into has pre-existing data.
+						throw restore_destination_not_empty();
+					}
 				}
 			}
 		}
