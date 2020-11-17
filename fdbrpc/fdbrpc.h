@@ -265,10 +265,10 @@ public:
 	}
 
 	FutureStream<T> getFuture() const { queue->addFutureRef(); return FutureStream<T>(queue); }
-	ReplyPromiseStream() : queue(new NetNotifiedQueue<T>(0, 1)) {}
-	ReplyPromiseStream(const ReplyPromiseStream& rhs) : queue(queue.sav) { queue->addPromiseRef(); }
+	ReplyPromiseStream() : queue(new NetNotifiedQueue<T>(0, 1, false)) {}
+	ReplyPromiseStream(const ReplyPromiseStream& rhs) : queue(rhs.queue) { queue->addPromiseRef(); }
 	ReplyPromiseStream(ReplyPromiseStream&& rhs) noexcept : queue(rhs.queue) { rhs.queue = 0; }
-	explicit ReplyPromiseStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint)) {}
+	explicit ReplyPromiseStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint, false)) {}
 
 	
 	~ReplyPromiseStream() {
@@ -486,10 +486,10 @@ public:
 		return getReplyUnlessFailedFor(ReplyPromise<X>(), sustainedFailureDuration, sustainedFailureSlope);
 	}
 
-	explicit RequestStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint)) {}
+	explicit RequestStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint, true)) {}
 
 	FutureStream<T> getFuture() const { queue->addFutureRef(); return FutureStream<T>(queue); }
-	RequestStream() : queue(new NetNotifiedQueue<T>(0, 1)) {}
+	RequestStream() : queue(new NetNotifiedQueue<T>(0, 1, true)) {}
 	RequestStream(const RequestStream& rhs) : queue(rhs.queue) { queue->addPromiseRef(); }
 	RequestStream(RequestStream&& rhs) noexcept : queue(rhs.queue) { rhs.queue = 0; }
 	void operator=(const RequestStream& rhs) {
