@@ -52,7 +52,7 @@ struct FlowReceiver : public NetworkMessageReceiver {
 
 	bool isLocalEndpoint() { return m_isLocalEndpoint; }
 	bool isRemoteEndpoint() { return endpoint.isValid() && !m_isLocalEndpoint; }
-	bool isStream() const override { return m_stream; }
+	virtual bool isStream() const { return m_stream; }
 
 	// If already a remote endpoint, returns that.  Otherwise makes this
 	//   a local endpoint and returns that.
