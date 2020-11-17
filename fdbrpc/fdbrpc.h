@@ -129,7 +129,7 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
 		this->addPromiseRef();
 		T message;
 		reader.deserialize(message);
-		if(message.isError() && message.getError().code() == error_code_broken_promise && !isStream()) {
+		if(!isStream() && message.isError() && message.getError().code() == error_code_broken_promise) {
 			IFailureMonitor::failureMonitor().endpointNotFound( getRawEndpoint() );
 		}
 		this->send(std::move(message));
