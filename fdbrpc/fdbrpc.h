@@ -34,9 +34,6 @@ struct FlowReceiver : public NetworkMessageReceiver {
 	FlowReceiver() : m_isLocalEndpoint(false), m_stream(false) {
 	}
 
-	FlowReceiver(bool stream) : m_isLocalEndpoint(false), m_stream(stream) {
-	}
-
 	FlowReceiver(Endpoint const& remoteEndpoint, bool stream)
 	  : endpoint(remoteEndpoint), m_isLocalEndpoint(false), m_stream(stream) {
 		FlowTransport::transport().addPeerReference(endpoint, m_stream);
@@ -52,7 +49,6 @@ struct FlowReceiver : public NetworkMessageReceiver {
 
 	bool isLocalEndpoint() { return m_isLocalEndpoint; }
 	bool isRemoteEndpoint() { return endpoint.isValid() && !m_isLocalEndpoint; }
-	virtual bool isStream() const { return m_stream; }
 
 	// If already a remote endpoint, returns that.  Otherwise makes this
 	//   a local endpoint and returns that.
@@ -111,29 +107,6 @@ struct NetSAV final : SAV<T>, FlowReceiver, FastAllocated<NetSAV<T>> {
 		} else {
 			SAV<T>::sendAndDelPromiseRef(message.get().asUnderlyingType());
 		}
-	}
-};
-
-template <class T>
-struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<NetNotifiedQueue<T>> {
-	using FastAllocated<NetNotifiedQueue<T>>::operator new;
-	using FastAllocated<NetNotifiedQueue<T>>::operator delete;
-
-	NetNotifiedQueue(int futures, int promises, bool isRequestStream) : 
-	NotifiedQueue<T>(futures, promises), FlowReceiver(isRequestStream) {}
-	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint, bool isRequestStream)
-	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, isRequestStream) {}
-
-	void destroy() override { delete this; }
-	void receive(ArenaObjectReader& reader) override {
-		this->addPromiseRef();
-		T message;
-		reader.deserialize(message);
-		if(!isStream() && message.isError() && message.getError().code() == error_code_broken_promise) {
-			IFailureMonitor::failureMonitor().endpointNotFound( getRawEndpoint() );
-		}
-		this->send(std::move(message));
-		this->delPromiseRef();
 	}
 };
 
@@ -245,6 +218,28 @@ template <class Reply>
 void setReplyPriority(const ReplyPromise<Reply> & p, TaskPriority taskID) { p.getEndpoint(taskID); }
 
 template <class T>
+struct NetNotifiedQueueWithErrors final : NotifiedQueue<T>, FlowReceiver, FastAllocated<NetNotifiedQueue<T>> {
+	using FastAllocated<NetNotifiedQueue<T>>::operator new;
+	using FastAllocated<NetNotifiedQueue<T>>::operator delete;
+
+	NetNotifiedQueue(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
+	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint)
+	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, false) {}
+
+	void destroy() override { delete this; }
+	void receive(ArenaObjectReader& reader) override {
+		this->addPromiseRef();
+		ErrorOr<EnsureTable<T>> message;
+		reader.deserialize(message);
+		if(message.isError() && message.getError().code() == error_code_broken_promise) {
+			IFailureMonitor::failureMonitor().endpointNotFound( getRawEndpoint() );
+		}
+		this->send(std::move(message));
+		this->delPromiseRef();
+	}
+};
+
+template <class T>
 class ReplyPromiseStream {
 public:
 	// stream.send( request )
@@ -265,16 +260,15 @@ public:
 	}
 
 	FutureStream<T> getFuture() const { queue->addFutureRef(); return FutureStream<T>(queue); }
-	ReplyPromiseStream() : queue(new NetNotifiedQueue<T>(0, 1, false)) {}
+	ReplyPromiseStream() : queue(new NetNotifiedQueueWithErrors<T>(0, 1)) {}
 	ReplyPromiseStream(const ReplyPromiseStream& rhs) : queue(rhs.queue) { queue->addPromiseRef(); }
 	ReplyPromiseStream(ReplyPromiseStream&& rhs) noexcept : queue(rhs.queue) { rhs.queue = 0; }
-	explicit ReplyPromiseStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint, false)) {}
+	explicit ReplyPromiseStream(const Endpoint& endpoint) : queue(new NetNotifiedQueueWithErrors<T>(0, 1, endpoint)) {}
 
 	
 	~ReplyPromiseStream() {
 		if (queue)
 			queue->delPromiseRef();
-		//queue = (NetNotifiedQueue<T>*)0xdeadbeef;
 	}
 
 	const Endpoint& getEndpoint(TaskPriority taskID = TaskPriority::DefaultEndpoint) const { return queue->getEndpoint(taskID); }
@@ -297,7 +291,7 @@ public:
 	}
 
 private:
-	NetNotifiedQueue<T>* queue;
+	NetNotifiedQueueWithErrors<T>* queue;
 };
 
 template <class Ar, class T>
@@ -326,6 +320,26 @@ struct serializable_traits<ReplyPromiseStream<T>> : std::true_type {
 			serializer(ar, ep);
 		}
 	}
+};
+
+template <class T>
+struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<NetNotifiedQueue<T>> {
+	using FastAllocated<NetNotifiedQueue<T>>::operator new;
+	using FastAllocated<NetNotifiedQueue<T>>::operator delete;
+
+	NetNotifiedQueue(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
+	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint)
+	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, true) {}
+
+	void destroy() override { delete this; }
+	void receive(ArenaObjectReader& reader) override {
+		this->addPromiseRef();
+		T message;
+		reader.deserialize(message);
+		this->send(std::move(message));
+		this->delPromiseRef();
+	}
+	bool isStream() const override { return true; }
 };
 
 template <class T>
@@ -486,10 +500,10 @@ public:
 		return getReplyUnlessFailedFor(ReplyPromise<X>(), sustainedFailureDuration, sustainedFailureSlope);
 	}
 
-	explicit RequestStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint, true)) {}
+	explicit RequestStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T>(0, 1, endpoint)) {}
 
 	FutureStream<T> getFuture() const { queue->addFutureRef(); return FutureStream<T>(queue); }
-	RequestStream() : queue(new NetNotifiedQueue<T>(0, 1, true)) {}
+	RequestStream() : queue(new NetNotifiedQueue<T>(0, 1)) {}
 	RequestStream(const RequestStream& rhs) : queue(rhs.queue) { queue->addPromiseRef(); }
 	RequestStream(RequestStream&& rhs) noexcept : queue(rhs.queue) { rhs.queue = 0; }
 	void operator=(const RequestStream& rhs) {

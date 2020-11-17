@@ -169,7 +169,6 @@ struct EndpointNotFoundReceiver final : NetworkMessageReceiver {
 		reader.deserialize(e);
 		IFailureMonitor::failureMonitor().endpointNotFound(e);
 	}
-	virtual bool isStream() const { return false; }
 };
 
 struct PingReceiver final : NetworkMessageReceiver {
@@ -183,7 +182,6 @@ struct PingReceiver final : NetworkMessageReceiver {
 		reader.deserialize(reply);
 		reply.send(Void());
 	}
-	virtual bool isStream() const { return false; }
 };
 
 class TransportData {
