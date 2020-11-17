@@ -120,7 +120,7 @@ class ArenaObjectReader;
 class NetworkMessageReceiver {
 public:
 	virtual void receive(ArenaObjectReader&) = 0;
-	virtual bool isStream() const { return false; }
+	virtual bool isStream() = 0;
 };
 
 struct TransportData;

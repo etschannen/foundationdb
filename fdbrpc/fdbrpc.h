@@ -52,6 +52,7 @@ struct FlowReceiver : public NetworkMessageReceiver {
 
 	bool isLocalEndpoint() { return m_isLocalEndpoint; }
 	bool isRemoteEndpoint() { return endpoint.isValid() && !m_isLocalEndpoint; }
+	bool isStream() const override { return m_stream; }
 
 	// If already a remote endpoint, returns that.  Otherwise makes this
 	//   a local endpoint and returns that.
@@ -74,6 +75,10 @@ struct FlowReceiver : public NetworkMessageReceiver {
 		m_isLocalEndpoint = true;
 		endpoint.token = token;
 		FlowTransport::transport().addWellKnownEndpoint(endpoint, this, taskID);
+	}
+
+	const Endpoint& getRawEndpoint() {
+		return endpoint;
 	}
 
 private:
@@ -100,7 +105,7 @@ struct NetSAV final : SAV<T>, FlowReceiver, FastAllocated<NetSAV<T>> {
 		reader.deserialize(message);
 		if (message.isError()) {
 			if(message.getError().code() == error_code_broken_promise) {
-				IFailureMonitor::failureMonitor().endpointNotFound( this->endpoint );
+				IFailureMonitor::failureMonitor().endpointNotFound( getRawEndpoint() );
 			}
 			SAV<T>::sendErrorAndDelPromiseRef(message.getError());
 		} else {
@@ -125,12 +130,11 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
 		T message;
 		reader.deserialize(message);
 		if(message.isError() && message.getError().code() == error_code_broken_promise && !isStream()) {
-			IFailureMonitor::failureMonitor().endpointNotFound( this->endpoint );
+			IFailureMonitor::failureMonitor().endpointNotFound( getRawEndpoint() );
 		}
 		this->send(std::move(message));
 		this->delPromiseRef();
 	}
-	bool isStream() const override { return this->m_stream; }
 };
 
 template <class T>
