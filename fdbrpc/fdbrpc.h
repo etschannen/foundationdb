@@ -218,12 +218,12 @@ template <class Reply>
 void setReplyPriority(const ReplyPromise<Reply> & p, TaskPriority taskID) { p.getEndpoint(taskID); }
 
 template <class T>
-struct NetNotifiedQueueWithErrors final : NotifiedQueue<T>, FlowReceiver, FastAllocated<NetNotifiedQueue<T>> {
-	using FastAllocated<NetNotifiedQueue<T>>::operator new;
-	using FastAllocated<NetNotifiedQueue<T>>::operator delete;
+struct NetNotifiedQueueWithErrors final : NotifiedQueue<T>, FlowReceiver, FastAllocated<NetNotifiedQueueWithErrors<T>> {
+	using FastAllocated<NetNotifiedQueueWithErrors<T>>::operator new;
+	using FastAllocated<NetNotifiedQueueWithErrors<T>>::operator delete;
 
-	NetNotifiedQueue(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
-	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint)
+	NetNotifiedQueueWithErrors(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
+	NetNotifiedQueueWithErrors(int futures, int promises, const Endpoint& remoteEndpoint)
 	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, false) {}
 
 	void destroy() override { delete this; }
