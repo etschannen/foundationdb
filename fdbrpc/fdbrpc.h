@@ -99,7 +99,7 @@ struct NetSAV final : SAV<T>, FlowReceiver, FastAllocated<NetSAV<T>> {
 		ErrorOr<EnsureTable<T>> message;
 		reader.deserialize(message);
 		if (message.isError()) {
-			if(message.getError() == error_code_broken_promise) {
+			if(message.getError().code() == error_code_broken_promise) {
 				IFailureMonitor::failureMonitor().endpointNotFound( this->endpoint );
 			}
 			SAV<T>::sendErrorAndDelPromiseRef(message.getError());
@@ -124,7 +124,7 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
 		this->addPromiseRef();
 		T message;
 		reader.deserialize(message);
-		if(message.isError() && message.getError() == error_code_broken_promise && !isStream()) {
+		if(message.isError() && message.getError().code() == error_code_broken_promise && !isStream()) {
 			IFailureMonitor::failureMonitor().endpointNotFound( this->endpoint );
 		}
 		this->send(std::move(message));
